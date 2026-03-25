@@ -16,3 +16,5 @@ data/inbetween
 data/embeddings/
 
 config.yaml
+
+film-rag
