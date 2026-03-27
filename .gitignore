@@ -11,9 +11,7 @@ data/processed/*
 # Ignore raw Kaggle movie metadata
 data/movie_catalog/movie_metadata.csv
 # Ignore raw datasets
-data/raw/
-data/inbetween
-data/embeddings/
+data/
 
 config.yaml
 

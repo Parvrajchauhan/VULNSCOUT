@@ -7,8 +7,7 @@ This document explains the core data sources used in the VulnScout RAG pipeline 
 ## 1. NVD (CVE Data)
 
 - Source: NIST National Vulnerability Database  
-- Purpose: Real-world vulnerabilities  
-- Updated: Daily  
+- Purpose: Real-world vulnerabilities   
 
 **Embedded:**  
 CVE ID + vulnerability description  
