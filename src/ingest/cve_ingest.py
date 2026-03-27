@@ -1,8 +1,8 @@
 import json
 from datetime import datetime
 
-INPUT_FILE = "data/nvdcve-2.0-recent.json"
-OUTPUT_FILE = "data/raw/cve_processed.jsonl"
+INPUT_FILE = "data/raw/NVD_CVE/nvdcve-2.0-2025.json"
+OUTPUT_FILE = "data/raw/NVD_CVE/cve_processed2.jsonl"
 
 
 def get_english_description(descriptions):
