@@ -1,60 +1,98 @@
+import json
+import os
 import pandas as pd
-from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "processed"
-CHUNKS_PATH = DATA_DIR / "retrieval_chunks.csv"
+
+FILES = {
+    "CVE": "data/chunkfile/cve_chunks.jsonl",
+    "CWE_OWASP": "data/chunkfile/cwe_owasp_chunks.jsonl"
+}
+
+
+def load_jsonl(file_path):
+    data = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            data.append(json.loads(line))
+    return data
+
+
+def normalize_data(data):
+    rows = []
+
+    for item in data:
+        metadata = item.get("metadata", {})
+
+        rows.append({
+            "chunk_id": item.get("chunk_id"),
+            "text": item.get("text", ""),
+            "text_length": len(item.get("text", "")),
+            "source": metadata.get("source"),
+            "section": metadata.get("section"),
+            "section_type": metadata.get("section_type"),
+            "severity": metadata.get("severity"),
+            "year": metadata.get("year")
+        })
+
+    return pd.DataFrame(rows)
+
+
+def analyze(df, name):
+    print(f" DATASET ANALYSIS: {name}")
+
+    print(f"\nTotal Chunks: {len(df)}")
+
+    print("\nColumns:")
+    print(df.columns.tolist())
+
+    print("\nText Length Stats:")
+    print(f"Avg Length: {df['text_length'].mean():.2f}")
+    print(f"Max Length: {df['text_length'].max()}")
+    print(f"Min Length: {df['text_length'].min()}")
+
+    print("\nUnique Sources:")
+    print(df["source"].dropna().unique())
+
+    print("\nSource Distribution:")
+    print(df["source"].value_counts())
+
+    print("\nUnique Sections:")
+    print(df["section"].dropna().unique())
+
+    print("\nSection Distribution:")
+    print(df["section"].value_counts())
+
+    if df["section_type"].notna().any():
+        print("\nSection Type Distribution:")
+        print(df["section_type"].value_counts())
+
+    if df["severity"].notna().any():
+        print("\nSeverity Distribution:")
+        print(df["severity"].value_counts())
+
+    if df["year"].notna().any():
+        print("\nYear Distribution:")
+        print(df["year"].value_counts().sort_index())
+
+    print("\nMissing Values:")
+    print(df.isnull().sum())
+
+    print("\nDuplicate Chunks (by text):")
+    print(df.duplicated(subset=["text"]).sum())
+
+    print("\nChunk Size Distribution:")
+    print(pd.cut(df["text_length"], bins=[0,300,600,900,1200,2000,5000]).value_counts().sort_index())
+
+    print("\nAnalysis Complete!")
 
 
 def main():
-    df = pd.read_csv(CHUNKS_PATH)
-    print(df["section"].value_counts())
-    print(df["section"].nunique())
-    print(f"Total retrieval chunks: {len(df)}")
-    print(f"Total parent documents: {df['doc_id'].nunique()}")
-    print()
-    nan_doc_count = df[df["text"].isna()]["chunk_id"].nunique()
-    print(f"Documents with NaN text: {nan_doc_count}")
+    for name, path in FILES.items():
+        print(f"\nLoading {name}...")
+        data = load_jsonl(path)
 
-    df["chunk_len"] = df["text"].str.len()
-
-    avg_len = df["chunk_len"].mean()
-    min_len = df["chunk_len"].min()
-    max_len = df["chunk_len"].max()
-
-    print(f"Average chunk length: {avg_len:.1f} chars")
-    print(f"Min chunk length: {min_len} chars")
-    print(f"Max chunk length: {max_len} chars")
-    print()
-
-    short_chunks = df[df["chunk_len"] < 150]
-    print("=== SHORT CHUNKS CHECK ===")
-    print(f"Chunks < 150 chars: {len(short_chunks)}")
-    if len(short_chunks) > 0:
-        print(short_chunks[["chunk_id", "doc_id", "chunk_len"]].head())
-    print()
-
-    overlap_issues = []
-
-    for doc_id, g in df.sort_values("start_char").groupby("doc_id"):
-        prev_end = None
-        for _, row in g.iterrows():
-            if prev_end is not None:
-                if row["start_char"] < prev_end:
-                    overlap_issues.append((doc_id, row["chunk_id"]))
-            prev_end = row["end_char"]
-
-    if overlap_issues:
-        print(f"Overlap detected in {len(overlap_issues)} retrieval chunks")
-        print(overlap_issues[:5])
-    else:
-        print("No overlap detected")
-    print()
-
-    bad_offsets = df[df["end_char"] <= df["start_char"]]
-    print(f"Chunks with invalid offsets: {len(bad_offsets)}")
-    if len(bad_offsets) > 0:
-        print(bad_offsets[["chunk_id", "start_char", "end_char"]].head())
-    print()
+        df = normalize_data(data)
+        analyze(df, name)
 
 
 if __name__ == "__main__":
