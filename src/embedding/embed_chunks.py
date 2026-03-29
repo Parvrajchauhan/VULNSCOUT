@@ -1,86 +1,62 @@
-import os
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
+import json
+from embedding_model import EmbeddingModel
+from embedding_cache import EmbeddingCache
 
-from .embedding_model import load_embedding_model
-from .embedding_cache import EmbeddingCache
+INPUT_FILES = [
+    "data/chunkfile/cve_chunks.jsonl",
+    "data/chunkfile/cwe_owasp_chunks.jsonl"
+]
 
-
-BATCH_SIZE = 64
-OUTPUT_DIR = "data/embeddings"
-
-
-REQUIRED_COLUMNS = {
-    "doc_id",
-    "chunk_id",
-    "text",
-    "start_char",
-    "end_char",
-    "source",
-    "section",
-    "title",
-    "created_at",
-}
+OUTPUT_FILES = [
+    "data/embedding/embedded_chunks_cve.json",
+    "data/embedding/embedded_chunks_cwe_owasp.json"
+]
 
 
-def embed_chunks(chunks_df: pd.DataFrame):
+def load_chunks(index: int):
+    chunks = []
+    with open(INPUT_FILES[index], "r") as f:
+        for line in f:
+            chunks.append(json.loads(line))
+    return chunks
 
-    missing = REQUIRED_COLUMNS - set(chunks_df.columns)
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}")
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    model = load_embedding_model()
+def main():
+    model = EmbeddingModel()
     cache = EmbeddingCache()
 
-    texts = chunks_df["text"].tolist()
-    embeddings = []
+    for i in range(len(INPUT_FILES)):
+        chunks = load_chunks(i)
 
-    for i in tqdm(range(0, len(texts), BATCH_SIZE), desc="Embedding chunks"):
-        batch_texts = texts[i : i + BATCH_SIZE]
+        texts = []
+        valid_chunks = []
 
-        batch_embeddings = [None] * len(batch_texts)
-        to_encode = []
-        encode_positions = []
+        for chunk in chunks:
+            text = chunk["text"]
 
-        for idx, text in enumerate(batch_texts):
             cached = cache.get(text)
-            if cached is not None:
-                batch_embeddings[idx] = cached
+            if cached:
+                chunk["embedding"] = cached
             else:
-                to_encode.append(text)
-                encode_positions.append(idx)
+                texts.append(text)
+                valid_chunks.append(chunk)
 
-        if to_encode:
-            new_embeddings = model.encode(
-                to_encode,
-                batch_size=BATCH_SIZE,
-                normalize_embeddings=True,
-                show_progress_bar=False,
-            )
+        print(f"Encoding {len(valid_chunks)} new chunks...")
 
-            for pos, emb in zip(encode_positions, new_embeddings):
-                batch_embeddings[pos] = emb
-                cache.set(batch_texts[pos], emb)
+        if texts:
+            embeddings = model.encode(texts)
 
-        embeddings.extend(batch_embeddings)
+            for chunk, emb in zip(valid_chunks, embeddings):
+                chunk["embedding"] = emb.tolist()
+                cache.set(chunk["text"], emb)
 
-    embeddings = np.vstack(embeddings).astype("float32")
+        cache.save()
 
-    np.save(os.path.join(OUTPUT_DIR, "embeddings.npy"), embeddings)
+        with open(OUTPUT_FILES[i], "w") as f:
+            json.dump(chunks, f)
 
-    meta_df = chunks_df
-    meta_df.insert(0, "vector_id", np.arange(len(meta_df), dtype=np.int64))
-    meta_df.to_parquet(
-        os.path.join(OUTPUT_DIR, "chunks_meta.parquet"),
-        index=False,
-    )
-
-    print(f" Saved {embeddings.shape[0]} embeddings of dim {embeddings.shape[1]}")
+        print(f"Saved embeddings to {OUTPUT_FILES[i]}")
 
 
 if __name__ == "__main__":
-    chunks= pd.read_csv("data/processed/retrieval_chunks.csv")
-    embed_chunks(chunks)
+    main()

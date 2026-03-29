@@ -1,25 +1,22 @@
-import hashlib
+import json
 import os
-import pickle
-from typing import Optional
+
+CACHE_PATH = "data/embedding/cache.json"
 
 class EmbeddingCache:
+    def __init__(self):
+        if os.path.exists(CACHE_PATH):
+            with open(CACHE_PATH, "r") as f:
+                self.cache = json.load(f)
+        else:
+            self.cache = {}
 
-    def __init__(self, cache_dir: str = "data/embeddings/cache"):
-        self.cache_dir = cache_dir
-        os.makedirs(cache_dir, exist_ok=True)
+    def get(self, text):
+        return self.cache.get(text)
 
-    def _key(self, text: str) -> str:
-        return hashlib.sha1(text.encode("utf-8")).hexdigest()
+    def set(self, text, embedding):
+        self.cache[text] = embedding.tolist()
 
-    def get(self, text: str) -> Optional[list]:
-        path = os.path.join(self.cache_dir, self._key(text))
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                return pickle.load(f)
-        return None
-
-    def set(self, text: str, embedding):
-        path = os.path.join(self.cache_dir, self._key(text))
-        with open(path, "wb") as f:
-            pickle.dump(embedding, f)
+    def save(self):
+        with open(CACHE_PATH, "w") as f:
+            json.dump(self.cache, f)
