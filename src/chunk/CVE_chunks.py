@@ -1,6 +1,5 @@
 import json
 import os
-from collections import defaultdict
 from datetime import datetime
 
 MAX_CHARS = 1800
@@ -28,122 +27,74 @@ def get_year(date_str):
         return "unknown"
 
 
-def group_cves(data):
-    grouped = defaultdict(list)
-
-    for item in data:
-        meta = item.get("metadata", {})
-        year = get_year(meta.get("published_date", ""))
-        severity = meta.get("cvss_severity", "UNKNOWN")
-
-        key = (year, severity)
-        grouped[key].append(item)
-
-    return grouped
-
-
-def split_oversized(chunk):
-    if len(chunk["text"]) <= MAX_CHARS:
-        chunk["text_length"] = len(chunk["text"])
-        return [chunk]
-
-    sentences = [s.strip() for s in chunk["text"].split(". ") if s.strip()]
+def hard_split(chunk_id_base, text, metadata):
+    if len(text) <= MAX_CHARS:
+        return [{
+            "chunk_id":    chunk_id_base,
+            "text":        text,
+            "text_length": len(text),
+            "metadata":    metadata
+        }]
 
     parts = []
-    current_sentences = []
-
-    for sentence in sentences:
-        sentence = sentence + ". "
-        current_text = " ".join(current_sentences)
-
-        if len(current_text) + len(sentence) > MAX_CHARS and current_sentences:
-            parts.append(current_sentences.copy())
-
-            current_sentences = [current_sentences[-1], sentence.strip()]
-        else:
-            current_sentences.append(sentence.strip())
-
-    if current_sentences:
-        parts.append(current_sentences)
-
-    split_chunks = []
-    for i, sent_list in enumerate(parts):
-        text = ". ".join(sent_list).strip()
-        if not text.endswith("."):
-            text += "."
-
-        split_chunks.append({
-            **chunk,
-            "chunk_id": f"{chunk['chunk_id']}-pt{i+1}",
-            "text": text,
-            "text_length": len(text)
-        })
-
-    return split_chunks
-
-
-def hard_cap_split(chunk):
-    text = chunk["text"]
-
-    parts = []
-    for i in range(0, len(text), MAX_CHARS):
-        part = text[i:i+MAX_CHARS]
-
+    for i, start in enumerate(range(0, len(text), MAX_CHARS)):
+        part_text = text[start:start + MAX_CHARS]
         parts.append({
-            **chunk,
-            "chunk_id": f"{chunk['chunk_id']}-hc{len(parts)+1}",
-            "text": part,
-            "text_length": len(part)
+            "chunk_id":    f"{chunk_id_base}-pt{i+1}",
+            "text":        part_text,
+            "text_length": len(part_text),
+            "metadata":    {**metadata, "part": i + 1}
         })
 
     return parts
 
 
-def create_chunks(grouped_data):
+def create_chunks(all_data):
     final_chunks = []
-    chunk_id = 1
 
-    for (year, severity), items in grouped_data.items():
+    # deduplicate by cve_id
+    seen_ids = set()
+    deduped  = []
+    for item in all_data:
+        cve_id = item.get("metadata", {}).get("cve_id", "")
+        if cve_id and cve_id not in seen_ids:
+            seen_ids.add(cve_id)
+            deduped.append(item)
+        elif not cve_id:
+            deduped.append(item) 
 
-        items = sorted(items, key=lambda x: x["metadata"].get("cve_id", ""))
+    print(f"After dedup: {len(deduped)} CVEs (removed {len(all_data) - len(deduped)} duplicates)")
 
-        i = 0
-        while i < len(items):
-            chunk_items = items[i:i+3]
+    for idx, item in enumerate(deduped, start=1):
+        meta     = item.get("metadata", {})
+        cve_id   = meta.get("cve_id", f"UNKNOWN-{idx}")
+        year     = get_year(meta.get("published_date", ""))
+        severity = meta.get("cvss_severity", "UNKNOWN")
+        text     = item.get("text", "").strip()
 
-            combined_text = "\n\n".join([x["text"] for x in chunk_items])
+        if not text:
+            continue
 
-            combined_metadata = {
-                "year": year,
-                "severity": severity,
-                "cve_ids": [x["metadata"].get("cve_id") for x in chunk_items],
-                "source": "NVD",
-                "section": "cve_grouped"
-            }
+        chunk_metadata = {
+            "cve_id":   cve_id,
+            "year":     year,
+            "severity": severity,
+            "source":   "NVD",
+            "section":  "cve_single",
+        }
 
-            base_chunk = {
-                "chunk_id": f"cve_chunk_{chunk_id}",
-                "text": combined_text,
-                "metadata": combined_metadata
-            }
+        for extra_key in ("cvss_score", "published_date", "vendor", "product"):
+            if extra_key in meta:
+                chunk_metadata[extra_key] = meta[extra_key]
 
-            split_chunks = split_oversized(base_chunk)
-
-            for ch in split_chunks:
-                if len(ch["text"]) > MAX_CHARS:
-                    final_chunks.extend(hard_cap_split(ch))
-                else:
-                    final_chunks.append(ch)
-
-            chunk_id += 1
-            i += 2  
+        chunks = hard_split(f"cve_{cve_id}", text, chunk_metadata)
+        final_chunks.extend(chunks)
 
     return final_chunks
 
 
 def save_jsonl(data, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-
     with open(path, "w", encoding="utf-8") as f:
         for item in data:
             f.write(json.dumps(item) + "\n")
@@ -154,22 +105,25 @@ def main():
 
     print("Loading CVE files...")
     for file in CVE_FILES:
-        all_data.extend(load_jsonl(file))
+        chunk = load_jsonl(file)
+        print(f"  {file}: {len(chunk)} records")
+        all_data.extend(chunk)
 
     print(f"Total CVEs loaded: {len(all_data)}")
 
-    print("Grouping CVEs (year + severity)...")
-    grouped = group_cves(all_data)
+    print("Creating 1-CVE-per-chunk...")
+    final_chunks = create_chunks(all_data)
 
-    print("Creating chunks (3 CVEs + overlap)...")
-    final_chunks = create_chunks(grouped)
+    print(f"Final chunk count: {len(final_chunks)}")
 
-    print(f"Final chunks after splitting: {len(final_chunks)}")
+    # quick stats
+    lengths = [c["text_length"] for c in final_chunks]
+    print(f"  Avg length : {sum(lengths)//len(lengths)} chars")
+    print(f"  Max length : {max(lengths)} chars")
+    print(f"  Over limit : {sum(1 for l in lengths if l > MAX_CHARS)} chunks")
 
-    print("Saving...")
+    print("Saving")
     save_jsonl(final_chunks, OUTPUT_PATH)
-
-    print(" Done!")
 
 
 if __name__ == "__main__":

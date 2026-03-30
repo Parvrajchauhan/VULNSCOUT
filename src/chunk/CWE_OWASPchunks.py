@@ -69,7 +69,7 @@ def transform_chunk(chunk):
         }
 
     return {
-        "text": "Represent this cybersecurity passage for retrieval: " + text,
+        "text": text,
         "metadata": new_meta
     }
 

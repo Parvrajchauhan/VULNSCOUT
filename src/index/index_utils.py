@@ -103,6 +103,16 @@ class HybridRetrievalSystem:
 
         results_cwe= sorted(results_cwe, key=lambda x: x["score"], reverse=True)
         results_cve= sorted(results_cve, key=lambda x: x["score"], reverse=True)
+        CVE_SCORE_FLOOR  = 0.2
+        CWE_SCORE_FLOOR  = 0.65
+
+        def filter_by_floor(results, floor):
+            filtered = [r for r in results if r["score"] >= floor]
+            return filtered
+
+        results_cve = filter_by_floor(results_cve, CVE_SCORE_FLOOR)
+        results_cwe = filter_by_floor(results_cwe, CWE_SCORE_FLOOR)
+        
         return {
             "cve_results": results_cve,
             "cwe_results": results_cwe,
@@ -111,7 +121,7 @@ class HybridRetrievalSystem:
     def query(self, text: str, k_primary: int = 10, k_secondary: int = 5) -> dict:
         route = self.route_query(text)
 
-        prefixed = f"Represent this sentence for searching relevant passages: {text}"
+        prefixed = f"Represent this cybersecurity question for retrieving relevant passages:  {text}"
 
         embedding = self.embedder.encode([prefixed]) 
 

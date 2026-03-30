@@ -32,7 +32,7 @@ def main():
         valid_chunks = []
 
         for chunk in chunks:
-            text = chunk["text"]
+            text =  "Represent this cybersecurity passage for retrieval: "+ chunk["text"]
 
             cached = cache.get(text)
             if cached:
