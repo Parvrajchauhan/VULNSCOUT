@@ -59,14 +59,13 @@ def run_sanity_check():
     k_primary = 20
     k_secondary = 10
 
-    for i, query in enumerate(test_queries2, 1):
+    for i, query in enumerate(test_queries1, 1):
         print(f" Test Query {i}: {query}")
        
-
         response = system.query(query, k_primary, k_secondary)
 
         print(f"\n Route Decision: {response['route']}")
-
+        print(response)
         results = response["results"]
         cve_results = results.get("cve_results", [])
         cwe_results = results.get("cwe_results", [])

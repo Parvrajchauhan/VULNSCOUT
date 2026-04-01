@@ -1,0 +1,158 @@
+import re
+
+GROUND_TRUTH = {
+    "What is SQL injection and how to prevent it?": [
+        "sql injection", "query", "database", "input validation", "prepared statement"
+    ],
+    "CVE-2025-12707 vulnerability exploit and patch": [
+        "exploit", "patch", "vulnerability", "fix", "version", "impact"
+    ],
+    "buffer overflow vulnerability in C program example": [
+        "buffer overflow", "memory", "stack", "heap", "overflow", "c program"
+    ],
+    "directory traversal ../../../etc/passwd vulnerability": [
+        "path traversal", "directory traversal", "/etc/passwd", "file access"
+    ],
+    "access /etc/shadow via path traversal attack": [
+        "/etc/shadow", "path traversal", "unauthorized access", "file read"
+    ],
+    "multiple login requests brute force attempt": [
+        "brute force", "login", "authentication", "rate limiting", "password"
+    ],
+    "NoSQL injection with $where sleep(5000) delay attack": [
+        "nosql injection", "$where", "sleep", "timing attack", "mongodb"
+    ],
+    "XSS attack using <script>alert(document.cookie)</script>": [
+        "xss", "script", "cookie", "cross site scripting", "javascript"
+    ],
+    "XSS attack using img onerror fetch exfiltration": [
+        "xss", "onerror", "exfiltration", "javascript", "cookie"
+    ],
+    "SQL injection OR 1=1 bypass login": [
+        "sql injection", "authentication bypass", "or 1=1", "query"
+    ],
+    "SQL injection UNION SELECT username password": [
+        "sql injection", "union select", "database", "data extraction"
+    ],
+    "php filter base64 encode file read /etc/passwd": [
+        "file inclusion", "php filter", "base64", "/etc/passwd", "file read"
+    ],
+    "directory traversal ../../boot.ini windows": [
+        "path traversal", "boot.ini", "windows", "file access"
+    ],
+}
+
+
+def normalize(text):
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9\s/.$_-]', ' ', text)
+    return text
+
+
+def extract_text(results):
+    full_text = ""
+    for r in results.get("cve_results", []) + results.get("cwe_results", []):
+        data     = r.get("data", {})
+        text     = data.get("text", "")
+        metadata = str(data.get("metadata", {}))
+        full_text += " " + text + " " + metadata
+    return normalize(full_text)
+
+
+# ── Metric 1: Recall@K ──────────────────────────────────────────────────────
+# What fraction of expected keywords appear anywhere in the retrieved text?
+# High recall = nothing important was missed.
+def keyword_recall(retrieved_text, expected_keywords):
+    hits = sum(1 for kw in expected_keywords if kw in retrieved_text)
+    return hits / len(expected_keywords) if expected_keywords else 0.0
+
+
+# ── Metric 2: Precision@K ───────────────────────────────────────────────────
+# Of all unique word-tokens in the retrieved text, what fraction are
+# "relevant" (i.e. they appear in at least one expected keyword phrase)?
+#
+# Why it matters for VulnScout:
+#   A chunk about generic HTTP traffic may contain "sql" by coincidence and
+#   boost recall without actually being on-topic. Precision catches that bloat.
+#   Low precision + high recall → your score-floor filters may be too loose.
+def keyword_precision(retrieved_text, expected_keywords):
+    retrieved_tokens = set(retrieved_text.split())
+    if not retrieved_tokens:
+        return 0.0
+
+    # Flatten all keyword phrases into individual tokens
+    keyword_tokens = set()
+    for kw in expected_keywords:
+        keyword_tokens.update(normalize(kw).split())
+
+    relevant_hits = sum(1 for t in retrieved_tokens if t in keyword_tokens)
+    return relevant_hits / len(retrieved_tokens)
+
+
+# ── Metric 3: MRR (Mean Reciprocal Rank) ────────────────────────────────────
+# For each expected keyword, find the rank (1-indexed) of the first result
+# chunk that contains it, then average the reciprocals.
+#
+# Why it matters for VulnScout:
+#   Your FAISS pipeline returns an ordered list of chunks. MRR tells you
+#   whether relevant chunks surface at rank 1–2 (good) or rank 8–10 (bad).
+#   A perfect MRR=1.0 means every keyword was found in the very first chunk.
+#   This is especially useful for diagnosing the cross-modal augmentation:
+#   if MRR drops on `cve_first` queries, the centroid shift is burying hits.
+def mean_reciprocal_rank(results, expected_keywords):
+    """
+    Parameters
+    ----------
+    results : list[dict]
+        Ordered list of retrieved chunks, same format as extract_text() input.
+        Index 0 = highest-ranked chunk.
+    expected_keywords : list[str]
+        Ground-truth keywords for the query.
+
+    Returns
+    -------
+    float  MRR in [0, 1].  0.0 if no keyword was found in any chunk.
+    """
+    if not results or not expected_keywords:
+        return 0.0
+
+    # Pre-normalise each chunk once
+    chunk_texts = []
+    for r in results:
+        data = r.get("data", {})
+        text = data.get("text", "") + " " + str(data.get("metadata", {}))
+        chunk_texts.append(normalize(text))
+
+    reciprocal_ranks = []
+    for kw in expected_keywords:
+        norm_kw = normalize(kw)
+        rank = next(
+            (i + 1 for i, ct in enumerate(chunk_texts) if norm_kw in ct),
+            None   # keyword not found in any chunk
+        )
+        reciprocal_ranks.append(1.0 / rank if rank else 0.0)
+
+    return sum(reciprocal_ranks) / len(reciprocal_ranks)
+
+
+def score_results(query, results):
+    expected = GROUND_TRUTH.get(query, [])
+    full_text = extract_text(results)
+
+    recall    = keyword_recall(full_text, expected)
+    precision = keyword_precision(full_text, expected)
+    mrr       = mean_reciprocal_rank(results, expected)
+
+    # F1 over recall+precision gives a single noise-vs-coverage balance score
+    f1 = (
+        2 * precision * recall / (precision + recall)
+        if (precision + recall) > 0 else 0.0
+    )
+
+    return {
+        "query":     query,
+        "recall":    round(recall,    3),
+        "precision": round(precision, 3),
+        "f1":        round(f1,        3),
+        "mrr":       round(mrr,       3),
+    }
