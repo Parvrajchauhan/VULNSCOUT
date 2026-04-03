@@ -32,31 +32,15 @@ def _flatten_cve(cve_results: list) -> str:
 
     return "\n".join(lines)
 
-
-def _flatten_cwe(cwe_results: list) -> tuple[str, str]:
-    if not cwe_results:
-        return "No CWE context retrieved.", "No OWASP context retrieved."
-
-    cwe_lines, owasp_lines = [], []
+def _flatten_cwe(cwe_results):
+    lines = []
     for r in cwe_results:
-        meta   = r["data"]["metadata"]        
-        text   = r["data"].get("text", "")   
-
-        entry_id = meta.get("id",     "N/A")
-        title    = meta.get("title",  "")
+        meta   = r["data"]["metadata"]
+        text   = r["data"].get("text", "")
+        entry_id = meta.get("id", "N/A")
         source   = meta.get("source", "CWE").upper()
-
-        content = text if text else f"{entry_id}: {title}"
-
-        if "OWASP" in source:
-            owasp_lines.append(content)
-        else:
-            cwe_lines.append(content)
-
-    cwe_block   = "\n\n".join(cwe_lines)   if cwe_lines   else "No CWE context retrieved."
-    owasp_block = "\n\n".join(owasp_lines) if owasp_lines else "No OWASP context retrieved."
-    return cwe_block, owasp_block
-
+        lines.append(f"[{source}] {entry_id}: {text}")
+    return "\n\n".join(lines) if lines else "No CWE/OWASP context retrieved."
 
 def _call_gemini(prompt: str) -> str:
     try:
@@ -75,8 +59,8 @@ def _call_gemini(prompt: str) -> str:
 def _retrieve_contexts(query_text: str) -> tuple[str, str, str]:
     result      = retriever.query(query_text)
     cve_block   = _flatten_cve(result["results"]["cve_results"])
-    cwe_block, owasp_block = _flatten_cwe(result["results"]["cwe_results"])
-    return cve_block, cwe_block, owasp_block
+    cwe_owasp_block = _flatten_cwe(result["results"]["cwe_results"])
+    return cve_block, cwe_owasp_block
 
 
 def waf_analysis(
@@ -90,12 +74,11 @@ def waf_analysis(
 ) -> str:
     
     retrieval_query = f"{request_path} {query_string} {' '.join(anomaly_tokens)}"
-    cve_context, cwe_context, owasp_context = _retrieve_contexts(retrieval_query)
+    cve_context, cwe_owasp_block = _retrieve_contexts(retrieval_query)
 
     prompt = WAF_promt.format(
         cve_context=cve_context,
-        cwe_context=cwe_context,
-        owasp_context=owasp_context,
+        cwe_context=cwe_owasp_block,
         http_method=http_method,
         request_path=request_path,
         query_string=query_string,
@@ -110,13 +93,13 @@ def waf_analysis(
 def user_query(
     user_question: str,
 ) -> str:
-   
-    cve_context, cwe_context, owasp_context = _retrieve_contexts(user_question)
+    print(f"  QUERY: {user_question}")
+    
+    cve_context, cwe_owasp_block = _retrieve_contexts(user_question)
 
     prompt = User_promt.format(
         cve_context=cve_context,
-        cwe_context=cwe_context,
-        owasp_context=owasp_context,
+        cwe_context=cwe_owasp_block,
         user_question=user_question,
     )
     

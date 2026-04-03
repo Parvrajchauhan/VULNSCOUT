@@ -13,8 +13,6 @@ from src.llm.prompt_temp import User_promt
 def _print_retrieval_metrics(ret_scores: dict):
     print("  Retrieval Metrics")
     print(f"  {'Recall':<20} {ret_scores['recall']:.3f}")
-    print(f"  {'Precision':<20} {ret_scores['precision']:.3f}")
-    print(f"  {'F1':<20} {ret_scores['f1']:.3f}")
     print(f"  {'MRR':<20} {ret_scores['mrr']:.3f}")
 
 def _print_hit_summary(results_for_metrics: dict):
@@ -66,13 +64,12 @@ def retrevial_sanity(query,k_primary,k_secondary):
 
 #Generation
 def genrative_sanity(query,results_for_metrics):
-    cve_block              = _flatten_cve(results_for_metrics["cve_results"])
-    cwe_block, owasp_block = _flatten_cwe(results_for_metrics["cve_results"])
+    cve_block = _flatten_cve(results_for_metrics["cve_results"])
+    cwe_block = _flatten_cwe(results_for_metrics["cve_results"])
 
     prompt = User_promt.format(
         cve_context=cve_block,
         cwe_context=cwe_block,
-        owasp_context=owasp_block,
         user_question=query,
     )
 
@@ -98,11 +95,12 @@ def genrative_sanity(query,results_for_metrics):
 
 def run_sanity_check():
     k_primary = 20
-    k_secondary = 10
+    k_secondary =16
 
     for i, (query, expected_keywords) in enumerate(GROUND_TRUTH.items(), 1):
         results_for_metrics=retrevial_sanity(query, k_primary, k_secondary)
         genrative_sanity(query,results_for_metrics)
+        time.sleep(10)
     print("\nSanity check completed.\n")
 
 

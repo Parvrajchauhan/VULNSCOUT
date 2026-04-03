@@ -25,29 +25,8 @@ def keyword_recall(retrieved_text, expected_keywords):
     return hits / len(expected_keywords) if expected_keywords else 0.0
 
 
-# Metric 2: Precision@K
-# Of all unique word-tokens in the retrieved text, what fraction are
-# "relevant" (i.e. they appear in at least one expected keyword phrase)?
-#
-# Why it matters for VulnScout:
-#   A chunk about generic HTTP traffic may contain "sql" by coincidence and
-#   boost recall without actually being on-topic. Precision catches that bloat.
-#   Low precision + high recall → your score-floor filters may be too loose.
-def keyword_precision(retrieved_text, expected_keywords):
-    retrieved_tokens = set(retrieved_text.split())
-    if not retrieved_tokens:
-        return 0.0
 
-    # Flatten all keyword phrases into individual tokens
-    keyword_tokens = set()
-    for kw in expected_keywords:
-        keyword_tokens.update(normalize(kw).split())
-
-    relevant_hits = sum(1 for t in retrieved_tokens if t in keyword_tokens)
-    return relevant_hits / len(retrieved_tokens)
-
-
-#  Metric 3: MRR (Mean Reciprocal Rank) 
+#  Metric 2: MRR (Mean Reciprocal Rank) 
 # For each expected keyword, find the rank (1-indexed) of the first result
 # chunk that contains it, then average the reciprocals.
 #
@@ -85,20 +64,12 @@ def score_results(query, results):
     full_text = extract_text(results)
 
     recall    = keyword_recall(full_text, expected)
-    precision = keyword_precision(full_text, expected)
 
     all_hits = results.get("cve_results", []) + results.get("cwe_results", [])
     mrr      = mean_reciprocal_rank(all_hits, expected)
 
-    f1 = (
-        2 * precision * recall / (precision + recall)
-        if (precision + recall) > 0 else 0.0
-    )
-
     return {
         "query":     query,
         "recall":    round(recall,    3),
-        "precision": round(precision, 3),
-        "f1":        round(f1,        3),
         "mrr":       round(mrr,       3),
     }

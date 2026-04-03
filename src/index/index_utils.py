@@ -103,7 +103,7 @@ class HybridRetrievalSystem:
 
         results_cwe= sorted(results_cwe, key=lambda x: x["score"], reverse=True)
         results_cve= sorted(results_cve, key=lambda x: x["score"], reverse=True)
-        CVE_SCORE_FLOOR  = 0.2
+        CVE_SCORE_FLOOR  = 0.3
         CWE_SCORE_FLOOR  = 0.65
 
         def filter_by_floor(results, floor):

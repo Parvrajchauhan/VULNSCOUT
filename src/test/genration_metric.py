@@ -16,7 +16,6 @@ def extract_context(results):
         text     = data.get("text", "")
         metadata = data.get("metadata", {})
 
-        # CVE chunks use "cve_id"; CWE chunks use "id" (not "cwe_id")
         tag = metadata.get("cve_id") or metadata.get("id") or "UNKNOWN"
         context += f"[{tag}] {text}\n\n"
 
