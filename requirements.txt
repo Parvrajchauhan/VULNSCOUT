@@ -13,3 +13,6 @@ scikit-learn==1.8.0
 sentence-transformers==5.2.0
 tqdm==4.67.1
 uvicorn==0.40.0
+google==3.0.0
+dotenv==0.9.9
+google-genai==1.70.0

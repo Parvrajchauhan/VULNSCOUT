@@ -1,47 +1,5 @@
 import re
-
-GROUND_TRUTH = {
-    "What is SQL injection and how to prevent it?": [
-        "sql injection", "query", "database", "input validation", "prepared statement"
-    ],
-    "CVE-2025-12707 vulnerability exploit and patch": [
-        "exploit", "patch", "vulnerability", "fix", "version", "impact"
-    ],
-    "buffer overflow vulnerability in C program example": [
-        "buffer overflow", "memory", "stack", "heap", "overflow", "c program"
-    ],
-    "directory traversal ../../../etc/passwd vulnerability": [
-        "path traversal", "directory traversal", "/etc/passwd", "file access"
-    ],
-    "access /etc/shadow via path traversal attack": [
-        "/etc/shadow", "path traversal", "unauthorized access", "file read"
-    ],
-    "multiple login requests brute force attempt": [
-        "brute force", "login", "authentication", "rate limiting", "password"
-    ],
-    "NoSQL injection with $where sleep(5000) delay attack": [
-        "nosql injection", "$where", "sleep", "timing attack", "mongodb"
-    ],
-    "XSS attack using <script>alert(document.cookie)</script>": [
-        "xss", "script", "cookie", "cross site scripting", "javascript"
-    ],
-    "XSS attack using img onerror fetch exfiltration": [
-        "xss", "onerror", "exfiltration", "javascript", "cookie"
-    ],
-    "SQL injection OR 1=1 bypass login": [
-        "sql injection", "authentication bypass", "or 1=1", "query"
-    ],
-    "SQL injection UNION SELECT username password": [
-        "sql injection", "union select", "database", "data extraction"
-    ],
-    "php filter base64 encode file read /etc/passwd": [
-        "file inclusion", "php filter", "base64", "/etc/passwd", "file read"
-    ],
-    "directory traversal ../../boot.ini windows": [
-        "path traversal", "boot.ini", "windows", "file access"
-    ],
-}
-
+from src.test.truth import GROUND_TRUTH
 
 def normalize(text):
     text = text.lower()
@@ -59,7 +17,7 @@ def extract_text(results):
     return normalize(full_text)
 
 
-# ── Metric 1: Recall@K ──────────────────────────────────────────────────────
+#Metric 1: Recall@K 
 # What fraction of expected keywords appear anywhere in the retrieved text?
 # High recall = nothing important was missed.
 def keyword_recall(retrieved_text, expected_keywords):
@@ -67,7 +25,7 @@ def keyword_recall(retrieved_text, expected_keywords):
     return hits / len(expected_keywords) if expected_keywords else 0.0
 
 
-# ── Metric 2: Precision@K ───────────────────────────────────────────────────
+# Metric 2: Precision@K
 # Of all unique word-tokens in the retrieved text, what fraction are
 # "relevant" (i.e. they appear in at least one expected keyword phrase)?
 #
@@ -89,7 +47,7 @@ def keyword_precision(retrieved_text, expected_keywords):
     return relevant_hits / len(retrieved_tokens)
 
 
-# ── Metric 3: MRR (Mean Reciprocal Rank) ────────────────────────────────────
+#  Metric 3: MRR (Mean Reciprocal Rank) 
 # For each expected keyword, find the rank (1-indexed) of the first result
 # chunk that contains it, then average the reciprocals.
 #
@@ -100,19 +58,6 @@ def keyword_precision(retrieved_text, expected_keywords):
 #   This is especially useful for diagnosing the cross-modal augmentation:
 #   if MRR drops on `cve_first` queries, the centroid shift is burying hits.
 def mean_reciprocal_rank(results, expected_keywords):
-    """
-    Parameters
-    ----------
-    results : list[dict]
-        Ordered list of retrieved chunks, same format as extract_text() input.
-        Index 0 = highest-ranked chunk.
-    expected_keywords : list[str]
-        Ground-truth keywords for the query.
-
-    Returns
-    -------
-    float  MRR in [0, 1].  0.0 if no keyword was found in any chunk.
-    """
     if not results or not expected_keywords:
         return 0.0
 
@@ -136,14 +81,15 @@ def mean_reciprocal_rank(results, expected_keywords):
 
 
 def score_results(query, results):
-    expected = GROUND_TRUTH.get(query, [])
+    expected  = GROUND_TRUTH.get(query, [])
     full_text = extract_text(results)
 
     recall    = keyword_recall(full_text, expected)
     precision = keyword_precision(full_text, expected)
-    mrr       = mean_reciprocal_rank(results, expected)
 
-    # F1 over recall+precision gives a single noise-vs-coverage balance score
+    all_hits = results.get("cve_results", []) + results.get("cwe_results", [])
+    mrr      = mean_reciprocal_rank(all_hits, expected)
+
     f1 = (
         2 * precision * recall / (precision + recall)
         if (precision + recall) > 0 else 0.0

@@ -1,6 +1,6 @@
 import json
-from embedding_model import EmbeddingModel
-from embedding_cache import EmbeddingCache
+from src.embedding.embedding_model import EmbeddingModel
+from src.embedding.embedding_cache import EmbeddingCache
 
 INPUT_FILES = [
     "data/chunkfile/cve_chunks.jsonl",

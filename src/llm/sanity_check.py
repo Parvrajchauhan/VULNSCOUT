@@ -1,59 +1,110 @@
-from .generate import generate_answer
+# test.py
+import time
+from src.index.index_utils import HybridRetrievalSystem
+system=HybridRetrievalSystem()
+from  src.test.retrival_metric import score_results
+from src.test.truth import GROUND_TRUTH  
+from src.llm.client import _flatten_cve, _flatten_cwe, _call_gemini
+from src.test.genration_metric import evaluate_answer, format_eval_report
+from src.llm.prompt_temp import User_promt
 
 
-TEST_QUERIES = [
-    "Who directed Inception?",
-    "What happens at the end of Shawshank Redemption?",
-    "Which movie features Pandora?",
+#RETRIVAL
+def _print_retrieval_metrics(ret_scores: dict):
+    print("  Retrieval Metrics")
+    print(f"  {'Recall':<20} {ret_scores['recall']:.3f}")
+    print(f"  {'Precision':<20} {ret_scores['precision']:.3f}")
+    print(f"  {'F1':<20} {ret_scores['f1']:.3f}")
+    print(f"  {'MRR':<20} {ret_scores['mrr']:.3f}")
+
+def _print_hit_summary(results_for_metrics: dict):
+    cve_hits = results_for_metrics.get("cve_results", [])
+    cwe_hits = results_for_metrics.get("cwe_results", [])
+    route    = results_for_metrics.get("route", "user_query")
+
+    print(f"  Route          : {route}")
+    print(f"  CVE hits       : {len(cve_hits)}")
+    print(f"  CWE hits       : {len(cwe_hits)}")
+
+    if cve_hits:
+        meta  = cve_hits[0].get("data", {}).get("metadata", {})
+        tag   = meta.get("cve_id", meta.get("id", "?"))
+        score = cve_hits[0].get("score", "?")
+        print(f"  Top CVE chunk  : {tag}  (score {score})")
+    if cwe_hits:
+        meta  = cwe_hits[0].get("data", {}).get("metadata", {})
+        tag   = meta.get("id", meta.get("cwe_id", "?"))
+        score = cwe_hits[0].get("score", "?")
+        print(f"  Top CWE chunk  : {tag}  (score {score})")
+        
+def retrevial_sanity(query,k_primary,k_secondary):
+    print(f" Test Query: {query}")
     
-    # Iron Man
-    "How does Tony Stark escape captivity in Afghanistan, and what key realization changes him?",
-    "What mistake does Tony Stark make that allows Obadiah Stane to nearly succeed?",
+    t0 = time.perf_counter()
+    response = system.query(query, k_primary, k_secondary)       
+    retrieval_time = time.perf_counter() - t0
     
-    # X-Men: First Class
-    "What ideological difference causes Charles Xavier and Erik Lehnsherr to part ways?",
-    "How does Erik Lehnsherr ultimately kill Sebastian Shaw, and why is this significant?",
+    inner       = response.get("results", response)   
+
+    cve_results = inner.get("cve_results", [])
+    cwe_results = inner.get("cwe_results", [])
+
+    results_for_metrics = {
+        "cve_results": cve_results,
+        "cwe_results": cwe_results,
+        "route":       response.get("route", "user_query"),
+    }
+
+    _print_hit_summary(results_for_metrics)
+    print(f"  Retrieval time : {retrieval_time:.2f}s")
     
-    # The Wolf of Wall Street
-    "What specific illegal practices lead to Jordan Belfort’s downfall?",
-    "How does Jordan Belfort manipulate his employees to maintain loyalty during the fraud?",
+    ret_scores = score_results(query, results_for_metrics)
+    _print_retrieval_metrics(ret_scores)
+    return results_for_metrics
+
+
+
+#Generation
+def genrative_sanity(query,results_for_metrics):
+    cve_block              = _flatten_cve(results_for_metrics["cve_results"])
+    cwe_block, owasp_block = _flatten_cwe(results_for_metrics["cve_results"])
+
+    prompt = User_promt.format(
+        cve_context=cve_block,
+        cwe_context=cwe_block,
+        owasp_context=owasp_block,
+        user_question=query,
+    )
+
+    t1     = time.perf_counter()
+    answer = _call_gemini(prompt)
+    gen_time = time.perf_counter() - t1
+
+    print("  Generated Answer")
+    for line in answer.strip().splitlines():
+        print(f"  {line}")
+    print(f"\n  Generation time : {gen_time:.2f}s")
     
-    # Transformers
-    "Why are the Autobots searching for the AllSpark, and what happens when it is activated?"
-]
+    t2          = time.perf_counter()
+    eval_result = evaluate_answer(query, answer, results_for_metrics)
+    judge_time  = time.perf_counter() - t2
 
-def sanity_check_query(query: str):
-    print("\n" + "=" * 80)
-    print(f"QUERY: {query}")
-
-    result = generate_answer(query, top_k=5)
-
-    answer = result["answer"]
-    context = result["context"]
-
-    assert answer, " Empty LLM answer"
-    assert len(context) <= 8, " Too many chunks sent to LLM"
-
-    print("\n LLM ANSWER:")
-    print(answer)
-
-    if "don't know" not in answer.lower():
-        found_overlap = any(
-            answer.lower()[:30] in c["text"].lower()
-            or any(word in c["text"].lower() for word in answer.lower().split()[:5])
-            for c in context
-        )
-        assert found_overlap, "Possible hallucination detected"
-
-    print("LLM grounding looks OK")
+    print(format_eval_report(eval_result))
+    print(f"  Judge time     : {judge_time:.2f}s")
 
 
-def run_sanity_checks():
-    for q in TEST_QUERIES:
-        sanity_check_query(q)
 
-    print("\n ALL SANITY CHECKS PASSED")
+
+
+def run_sanity_check():
+    k_primary = 20
+    k_secondary = 10
+
+    for i, (query, expected_keywords) in enumerate(GROUND_TRUTH.items(), 1):
+        results_for_metrics=retrevial_sanity(query, k_primary, k_secondary)
+        genrative_sanity(query,results_for_metrics)
+    print("\nSanity check completed.\n")
 
 
 if __name__ == "__main__":
-    run_sanity_checks()
+    run_sanity_check()

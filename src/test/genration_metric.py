@@ -150,7 +150,7 @@ def format_eval_report(eval_result):
     dims = ["groundedness", "hallucination_penalty",
             "citation_correctness", "relevance"]
 
-    lines = "  LLM Judge Evaluation Report"
+    lines = ["LLM Judge Evaluation Report"]
     for dim in dims:
         d = eval_result[dim]
         label = dim.replace("_", " ").title()
