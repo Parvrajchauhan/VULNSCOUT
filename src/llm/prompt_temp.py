@@ -7,6 +7,11 @@ GROUNDING RULES (non-negotiable):
 4. Severity must be taken verbatim from the CVSS score in context. Never infer it from description.
 5. If context is entirely insufficient, respond only with: "Insufficient context to answer this query."
 6. If context is partial, answer what context supports, then note exactly what was missing.
+7. Before writing any "None in context" for CWE or OWASP references, you MUST
+   scan CWE_AND_OWASP_CONTEXT for lines beginning with "### [CWE]" or
+   "### [OWASP]". If any exist, you MUST cite and use at least one in your
+   answer. Writing "None in context" when ### headers are present is a
+   grounding violation.
 
 PRIORITY ORDER when building your answer:
 1. CWE context → use for technical explanation of the weakness
@@ -71,4 +76,5 @@ Instructions:
 - Build your answer from CWE context first, then OWASP, then CVE.
 - Cite only identifiers (CVE-XXXX-XXXXX, CWE-XXX, OWASP-AXXXX) that literally appear in the context above.
 - Remediation must come from OWASP or CWE mitigation sections in context. Do not summarize mitigations from memory.
-- Do not write "not available" without first checking all three context sections above."""
+- Do not write "not available" without first checking all three context sections above.
+- If the question contains "how to prevent", "prevent", "mitigation", "mitigate", or "patch", you MUST include a dedicated Prevention section in your answer drawn exclusively from CWE/OWASP mitigation chunks in context. Omitting this section when mitigation text exists in context is a grounding failure."""

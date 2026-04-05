@@ -35,11 +35,12 @@ def _flatten_cve(cve_results: list) -> str:
 def _flatten_cwe(cwe_results):
     lines = []
     for r in cwe_results:
-        meta   = r["data"]["metadata"]
-        text   = r["data"].get("text", "")
+        meta     = r["data"]["metadata"]
+        text     = r["data"].get("text", "")
         entry_id = meta.get("id", "N/A")
+        title    = meta.get("title", "")
         source   = meta.get("source", "CWE").upper()
-        lines.append(f"[{source}] {entry_id}: {text}")
+        lines.append(f"### [{source}] {entry_id}: {title}\n{text}")
     return "\n\n".join(lines) if lines else "No CWE/OWASP context retrieved."
 
 def _call_gemini(prompt: str) -> str:
@@ -105,20 +106,3 @@ def user_query(
     
     return _call_gemini(prompt)
 
-
-if __name__ == "__main__":
-    print("=== USER QUERY ===")
-    res1 = user_query("buffer overflow vulnerability in C program example")
-    print(res1)
-
-    print("\n=== WAF ANALYSIS ===")
-    res2 = waf_analysis(
-        http_method="GET",
-        request_path="directory traversal ../../../etc/passwd ",
-        query_string="vulnerability",
-        body_snippet="",
-        anomaly_tokens=["OR '1'='1"],
-        pll_score=0.92,
-        threshold=0.8,
-    )
-    print(res2)
